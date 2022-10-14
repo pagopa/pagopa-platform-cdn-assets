@@ -1,14 +1,5 @@
 trigger:
-- master
-
-parameters:
-  - name: environment
-    displayName: Target Environment
-    type: string
-    default: prod
-    values:
-      #- dev
-      - prod
+- main
 
 # variables set on azdevops to avoid circular dependency warning
 # $(DEFAULT_BRANCH)
@@ -24,21 +15,24 @@ variables:
 pool:
   vmImage: 'ubuntu-latest'
 
-steps:
-
-# SYNC STORAGE 
-- task: AzureCLI@1
-  displayName: 'Sync Storage'
-  inputs:
-    azureSubscription: '$(AZURE_SUBSCRIPTION)'
-    scriptLocation: inlineScript
-    inlineScript: |
-      az storage blob sync --container $(BLOB_CONTAINER_NAME) --account-name $(STORAGE_ACCOUNT_NAME) -s "/assets"
-# PURGE CDN AT EVERY COMMIT, so globally
-- task: AzureCLI@1
-  displayName: 'Purge CDN'
-  inputs:
-    azureSubscription: '$(AZURE_SUBSCRIPTION)'
-    scriptLocation: inlineScript
-    inlineScript: |
-      az cdn endpoint purge -g $(RESOURCE_GROUP_NAME) -n $(ENDPOINT_NAME) --profile-name $(PROFILE_CDN_NAME) --content-paths "/*"
+stages:
+  - stage: Deploy_PROD_assets_pagoPA
+    jobs:
+      - job: 'deploy'
+        steps:
+          # SYNC STORAGE 
+          - task: AzureCLI@1
+            displayName: 'Sync Storage'
+            inputs:
+              azureSubscription: '$(AZURE_SUBSCRIPTION)'
+              scriptLocation: inlineScript
+              inlineScript: |
+                az storage blob sync --container $(BLOB_CONTAINER_NAME) --account-name $(STORAGE_ACCOUNT_NAME) -s "/assets"
+          # PURGE CDN AT EVERY COMMIT, so globally
+          - task: AzureCLI@1
+            displayName: 'Purge CDN'
+            inputs:
+              azureSubscription: '$(AZURE_SUBSCRIPTION)'
+              scriptLocation: inlineScript
+              inlineScript: |
+                az cdn endpoint purge -g $(RESOURCE_GROUP_NAME) -n $(ENDPOINT_NAME) --profile-name $(PROFILE_CDN_NAME) --content-paths "/*"
