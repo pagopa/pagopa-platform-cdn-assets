@@ -24,7 +24,7 @@ stages:
           - task: AzureCLI@1
             displayName: 'Sync Storage'
             inputs:
-              azureSubscription: '$(AZURE_SUBSCRIPTION)'
+              azureSubscription: $(AZURE_SUBSCRIPTION)
               scriptLocation: inlineScript
               inlineScript: |
                 az storage blob sync --container $(BLOB_CONTAINER_NAME) --account-name $(STORAGE_ACCOUNT_NAME) -s "/assets"
