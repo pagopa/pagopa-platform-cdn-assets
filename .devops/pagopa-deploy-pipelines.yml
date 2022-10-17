@@ -14,8 +14,7 @@ variables:
   BLOB_CONTAINER_NAME: $(PROD_BLOB_CONTAINER_NAME)
   AZURE_STORAGE_KEY: $(PROD_AZURE_STORAGE_KEY)
 pool:
-  vmImage: 'ubuntu-latest'
-
+  vmImage: 'windows-2019'
 stages:
   - stage: Deploy_PROD_assets_pagoPA
     jobs:
@@ -28,7 +27,7 @@ stages:
               azureSubscription: '$(AZURE_SUBSCRIPTION)'
               scriptLocation: inlineScript
               inlineScript: |
-                az storage blob sync --container "$(BLOB_CONTAINER_NAME)" --account-name $(STORAGE_ACCOUNT_NAME) --account-key $(AZURE_STORAGE_KEY) -s "assets"
+                call az storage blob sync --container "$(BLOB_CONTAINER_NAME)" --account-name $(STORAGE_ACCOUNT_NAME) --account-key $(AZURE_STORAGE_KEY) -s "assets"
           # PURGE CDN AT EVERY COMMIT, so globally
           - task: AzureCLI@1
             displayName: 'Purge CDN'
@@ -36,4 +35,4 @@ stages:
               azureSubscription: '$(AZURE_SUBSCRIPTION)'
               scriptLocation: inlineScript
               inlineScript: |
-                az cdn endpoint purge -g $(RESOURCE_GROUP_NAME) -n $(ENDPOINT_NAME) --profile-name $(PROFILE_CDN_NAME) --content-paths "/*"
+                call az cdn endpoint purge -g $(RESOURCE_GROUP_NAME) -n $(ENDPOINT_NAME) --profile-name $(PROFILE_CDN_NAME) --content-paths "/*"
