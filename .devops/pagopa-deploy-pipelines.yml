@@ -12,7 +12,7 @@ variables:
   ENDPOINT_NAME: $(PROD_ENDPOINT_NAME)
   RESOURCE_GROUP_NAME: $(PROD_RESOURCE_GROUP_NAME)
   BLOB_CONTAINER_NAME: $(PROD_BLOB_CONTAINER_NAME)
-
+  AZURE_STORAGE_KEY: $(PROD_AZURE_STORAGE_KEY)
 pool:
   vmImage: 'ubuntu-latest'
 
@@ -28,7 +28,7 @@ stages:
               azureSubscription: '$(AZURE_SUBSCRIPTION)'
               scriptLocation: inlineScript
               inlineScript: |
-                az storage blob sync --container "$(BLOB_CONTAINER_NAME)" --account-name $(STORAGE_ACCOUNT_NAME) -s "assets"
+                az storage blob sync --container "$(BLOB_CONTAINER_NAME)" --account-name $(STORAGE_ACCOUNT_NAME) --account-key $(AZURE_STORAGE_KEY) -s "assets"
           # PURGE CDN AT EVERY COMMIT, so globally
           - task: AzureCLI@1
             displayName: 'Purge CDN'
