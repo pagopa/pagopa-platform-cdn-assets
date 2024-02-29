@@ -70,3 +70,12 @@ Check your code before commit.
 ```sh
 pre-commit run -a
 ```
+
+Here is a reference table about who uses resources and theirs paths from this CDN
+
+| Service              | Database/collection/field      | Paths      | github repo search link                                                                                                                              |
+|----------------------|--------------------------------|------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Transactions-service |                                | apm        | https://github.com/search?q=repo%3Apagopa%2Fpagopa-ecommerce-transactions-service+https%3A%2F%2Fassets.cdn.platform.pagopa.it%2Fapm&type=code        |
+| Transactions-service |                                | creditcard | https://github.com/search?q=repo%3Apagopa%2Fpagopa-ecommerce-transactions-service+https%3A%2F%2Fassets.cdn.platform.pagopa.it%2Fcreditcard&type=code |
+|                      | eCommerce/paymentMethods/asset | apm        | N/A                                                                                                                                                  |
+|                      | eCommerce/paymentMethods/asset | creditcard | N/A                                                                                                                                                  |
