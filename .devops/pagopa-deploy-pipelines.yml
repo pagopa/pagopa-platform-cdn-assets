@@ -14,7 +14,7 @@ variables:
   BLOB_CONTAINER_NAME: $(PROD_BLOB_CONTAINER_NAME)
   AZURE_STORAGE_KEY: $(PROD_AZURE_STORAGE_KEY)
 pool:
-  vmImage: 'windows-2019'
+  vmImage: 'windows-2022'
 stages:
   - stage: Deploy_PROD_assets_pagoPA
     jobs:
