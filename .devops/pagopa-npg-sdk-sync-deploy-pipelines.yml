@@ -1,0 +1,64 @@
+# Azure DevOps pipeline to sync the NPG SDK from Nexi to the platform CDN.
+# Runs hourly. NPG has two real environments (staging and production), so the
+# pipeline publishes two folders on the single platform CDN ($web):
+#   - npg-uat  <- NPG staging (stg-ta.nexigroup.com), verified via the UAT integrity API
+#   - npg-prod <- NPG production (xpay.nexigroup.com), verified via the PROD integrity API
+# For each variant it downloads the SDK, computes its SHA-384, verifies it against
+# NPG's source-of-truth hash (payment-methods-handler integrity endpoint via APIM),
+# and only on a match publishes hfsdk.js + hfsdk.integrity.json into the folder.
+# Storage/CDN/subscription values come from the ADO registration (core project):
+#   $(PROD_STORAGE_ACCOUNT_NAME), $(PROD_PROFILE_CDN_NAME), $(PROD_ENDPOINT_NAME),
+#   $(PROD_RESOURCE_GROUP_NAME), $(PROD_AZURE_SUBSCRIPTION), $(PROD_AZURE_STORAGE_KEY).
+
+trigger: none
+pr: none
+
+schedules:
+  - cron: "0 * * * *"
+    displayName: "Sync NPG SDK hourly"
+    branches:
+      include:
+        - main
+    always: true
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - stage: Sync_npg_uat
+    dependsOn: []
+    jobs:
+      - job: sync_npg_sdk_uat
+        displayName: 'Sync NPG SDK (staging) -> npg-uat'
+        steps:
+          - template: azure-templates/sync-npg-sdk-steps.yml
+            parameters:
+              npg_origin: 'https://stg-ta.nexigroup.com'
+              integrity_endpoint: 'https://api.uat.platform.pagopa.it/checkout/npg/sdk/v1/integrity'
+              target_folder: 'npg-uat'
+              storage_account: '$(PROD_STORAGE_ACCOUNT_NAME)'
+              cdn_rg: '$(PROD_RESOURCE_GROUP_NAME)'
+              cdn_profile: '$(PROD_PROFILE_CDN_NAME)'
+              cdn_endpoint: '$(PROD_ENDPOINT_NAME)'
+              service_connection: '$(PROD_AZURE_SUBSCRIPTION)'
+              emit_heartbeat: 'false'
+
+  - stage: Sync_npg_prod
+    dependsOn: []
+    jobs:
+      - job: sync_npg_sdk_prod
+        displayName: 'Sync NPG SDK (production) -> npg-prod'
+        steps:
+          - template: azure-templates/sync-npg-sdk-steps.yml
+            parameters:
+              npg_origin: 'https://xpay.nexigroup.com'
+              integrity_endpoint: 'https://api.platform.pagopa.it/checkout/npg/sdk/v1/integrity'
+              target_folder: 'npg-prod'
+              storage_account: '$(PROD_STORAGE_ACCOUNT_NAME)'
+              cdn_rg: '$(PROD_RESOURCE_GROUP_NAME)'
+              cdn_profile: '$(PROD_PROFILE_CDN_NAME)'
+              cdn_endpoint: '$(PROD_ENDPOINT_NAME)'
+              service_connection: '$(PROD_AZURE_SUBSCRIPTION)'
+              emit_heartbeat: 'true'
+              app_insights_name: 'pagopa-p-appinsights'
+              app_insights_rg: 'pagopa-p-monitor-rg'

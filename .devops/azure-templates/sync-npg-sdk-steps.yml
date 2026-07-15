@@ -1,0 +1,175 @@
+# Reusable steps to sync one NPG SDK variant to the platform CDN.
+# Downloads the SDK from an NPG origin, computes its SHA-384, verifies it against
+# NPG's source-of-truth hash (fetched from the payment-methods-handler integrity
+# endpoint via APIM), and only on a match publishes hfsdk.js + hfsdk.integrity.json
+# into the given folder of the platform CDN ($web). On a mismatch it fails and the
+# last-known-good stays served. The storage key is read from the AZURE_STORAGE_KEY
+# env var (set by the caller from a secret pipeline variable), never a parameter.
+parameters:
+  - name: npg_origin
+    type: string
+  - name: integrity_endpoint
+    type: string
+  - name: target_folder            # e.g. npg-uat or npg-prod
+    type: string
+  - name: storage_account
+    type: string
+  - name: cdn_rg
+    type: string
+  - name: cdn_profile
+    type: string
+  - name: cdn_endpoint
+    type: string
+  - name: service_connection
+    type: string
+  - name: emit_heartbeat           # 'true' only for the prod variant (paging source)
+    type: string
+    default: 'false'
+  - name: app_insights_name
+    type: string
+    default: ''
+  - name: app_insights_rg
+    type: string
+    default: ''
+
+steps:
+  - checkout: none
+
+  - task: AzureCLI@2
+    displayName: 'Sync NPG SDK -> ${{ parameters.target_folder }}'
+    env:
+      AZURE_STORAGE_KEY: $(PROD_AZURE_STORAGE_KEY)
+    inputs:
+      azureSubscription: '${{ parameters.service_connection }}'
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -euo pipefail
+
+        TARGET_FOLDER="${{ parameters.target_folder }}"
+        STORAGE_ACCOUNT="${{ parameters.storage_account }}"
+        # the injected endpoint-name variable can carry stray whitespace; strip it
+        # so the AFD purge targets the real endpoint.
+        CDN_ENDPOINT="$(printf '%s' "${{ parameters.cdn_endpoint }}" | tr -d '[:space:]')"
+        EMIT_HEARTBEAT="${{ parameters.emit_heartbeat }}"
+
+        SDK_URL="${{ parameters.npg_origin }}/monetaweb/resources/hfsdk.js"
+        echo "Downloading SDK from ${SDK_URL}"
+
+        HTTP_CODE=$(curl -sSL -w "%{http_code}" -o /tmp/hfsdk.js "${SDK_URL}")
+        if [ "${HTTP_CODE}" != "200" ]; then
+          echo "##vso[task.logissue type=error]SDK download failed with HTTP ${HTTP_CODE}"
+          exit 1
+        fi
+
+        FILE_SIZE=$(stat -c%s /tmp/hfsdk.js)
+        echo "SDK downloaded: ${FILE_SIZE} bytes"
+
+        HASH=$(openssl dgst -sha384 -binary /tmp/hfsdk.js | openssl base64 -A)
+        INTEGRITY="sha384-${HASH}"
+        echo "Computed integrity: ${INTEGRITY}"
+
+        # Origin validation: compare the computed hash against NPG's own published hash,
+        # fetched from the payment-methods-handler integrity endpoint (exposed on APIM in
+        # the ecommerce-for-checkout group). The pipeline holds no NPG credential; the
+        # handler owns the npg-api-key and proxies NPG /build/integrity.
+        echo "Fetching source-of-truth integrity from ${{ parameters.integrity_endpoint }}"
+        SOT_CODE=$(curl -sSL -w "%{http_code}" -o /tmp/sot.json "${{ parameters.integrity_endpoint }}")
+        if [ "${SOT_CODE}" != "200" ]; then
+          echo "##vso[task.logissue type=error]Integrity endpoint call failed with HTTP ${SOT_CODE}"
+          exit 1
+        fi
+
+        SOT_INTEGRITY=$(jq -r '.integrityHash // .integrity // empty' /tmp/sot.json)
+        if [ -z "${SOT_INTEGRITY}" ]; then
+          echo "##vso[task.logissue type=error]Integrity endpoint returned no hash"
+          exit 1
+        fi
+        echo "Source-of-truth integrity: ${SOT_INTEGRITY}"
+
+        # Normalize the optional sha384- prefix on both sides before comparing.
+        if [ "${INTEGRITY#sha384-}" != "${SOT_INTEGRITY#sha384-}" ]; then
+          echo "##vso[task.logissue type=error]Integrity mismatch: computed ${INTEGRITY} vs source-of-truth ${SOT_INTEGRITY}. Not publishing; keeping last-known-good."
+          exit 1
+        fi
+        echo "Integrity verified against NPG source of truth"
+
+        echo "{\"integrityHash\":\"${INTEGRITY}\"}" > /tmp/hfsdk.integrity.json
+
+        echo "Uploading SDK to platform CDN storage (${TARGET_FOLDER}/hfsdk.js)"
+        az storage blob upload \
+          --account-name "${STORAGE_ACCOUNT}" \
+          --account-key "${AZURE_STORAGE_KEY}" \
+          --auth-mode key \
+          --container-name '$web' \
+          --name "${TARGET_FOLDER}/hfsdk.js" \
+          --file /tmp/hfsdk.js \
+          --content-type "application/javascript" \
+          --overwrite
+
+        echo "Uploading integrity JSON to platform CDN storage (${TARGET_FOLDER}/hfsdk.integrity.json)"
+        az storage blob upload \
+          --account-name "${STORAGE_ACCOUNT}" \
+          --account-key "${AZURE_STORAGE_KEY}" \
+          --auth-mode key \
+          --container-name '$web' \
+          --name "${TARGET_FOLDER}/hfsdk.integrity.json" \
+          --file /tmp/hfsdk.integrity.json \
+          --content-type "application/json" \
+          --overwrite
+
+        echo "Purging CDN for /${TARGET_FOLDER}/*"
+        # keep working after the built-in cdn/afd commands are removed from az core.
+        az config set extension.use_dynamic_install=yes_without_prompt --only-show-errors
+        az afd endpoint purge \
+          -g "${{ parameters.cdn_rg }}" \
+          --endpoint-name "${CDN_ENDPOINT}" \
+          --profile-name "${{ parameters.cdn_profile }}" \
+          --content-paths "/${TARGET_FOLDER}/*"
+
+        # Success heartbeat: emit a NpgSdkSyncSuccess customEvent to App Insights, only
+        # for the variant that backs prod consumption (the paging source for the
+        # staleness alert). No heartbeat in the last 3h => the sync has stopped/failing.
+        if [ "${EMIT_HEARTBEAT}" = "true" ]; then
+          echo "Emitting sync-success heartbeat to App Insights"
+          # disable xtrace so the App Insights connection string / instrumentation
+          # key are never echoed to the log
+          set +x
+          # bounded with timeout so a hung ARM call can never stall the pipeline
+          AI_CONN=$(timeout 30 az monitor app-insights component show \
+            --app "${{ parameters.app_insights_name }}" \
+            -g "${{ parameters.app_insights_rg }}" \
+            --query connectionString -o tsv 2>/dev/null || true)
+          if [ -n "${AI_CONN}" ]; then
+            IKEY=$(printf '%s' "${AI_CONN}" | sed -n 's/.*InstrumentationKey=\([^;]*\).*/\1/p')
+            INGEST=$(printf '%s' "${AI_CONN}" | sed -n 's/.*IngestionEndpoint=\([^;]*\).*/\1/p')
+            HEARTBEAT_TIME=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+            # payload + response go to unpredictable temp files (mktemp). Keeping the
+            # iKey in the payload file means it never lands in the process args (argv).
+            HB_PAYLOAD=$(mktemp)
+            HB_RESP=$(mktemp)
+            printf '{"name":"Microsoft.ApplicationInsights.Event","time":"%s","iKey":"%s","data":{"baseType":"EventData","baseData":{"ver":2,"name":"NpgSdkSyncSuccess","properties":{"integrity":"%s","folder":"%s"}}}}' \
+              "${HEARTBEAT_TIME}" "${IKEY}" "${INTEGRITY}" "${TARGET_FOLDER}" > "${HB_PAYLOAD}"
+            # -o sends the body to a file (never stdout); -w prints only the HTTP
+            # status; connect/max timeouts guarantee the call cannot hang the job.
+            HB_CODE=$(curl -sS -o "${HB_RESP}" -w '%{http_code}' \
+              --connect-timeout 10 --max-time 30 \
+              -X POST "${INGEST}v2/track" -H 'Content-Type: application/json' \
+              -d @"${HB_PAYLOAD}" || true)
+            # itemsAccepted is the authoritative "did it land" signal - a 200 alone is
+            # not enough (App Insights can 200 with itemsAccepted:0). The v2/track
+            # response never contains the iKey, so these fields are safe to log.
+            HB_ACCEPTED=$(sed -n 's/.*"itemsAccepted":\([0-9][0-9]*\).*/\1/p' "${HB_RESP}")
+            HB_ERRORS=$(sed -n 's/.*\("errors":\[[^]]*\]\).*/\1/p' "${HB_RESP}")
+            rm -f "${HB_PAYLOAD}" "${HB_RESP}"
+            if [ "${HB_ACCEPTED:-0}" -ge 1 ]; then
+              echo "Heartbeat emitted (HTTP ${HB_CODE:-000}, itemsAccepted=${HB_ACCEPTED})"
+            else
+              echo "##vso[task.logissue type=warning]Heartbeat NOT accepted by App Insights (HTTP ${HB_CODE:-000}, itemsAccepted=${HB_ACCEPTED:-0}) ${HB_ERRORS}; sync itself succeeded."
+            fi
+          else
+            echo "##vso[task.logissue type=warning]Could not resolve App Insights connection string; heartbeat skipped (sync itself succeeded)"
+          fi
+        fi
+
+        echo "Sync complete for ${TARGET_FOLDER}"
