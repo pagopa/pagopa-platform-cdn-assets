@@ -34,7 +34,7 @@ stages:
           - template: azure-templates/sync-npg-sdk-steps.yml
             parameters:
               npg_origin: 'https://stg-ta.nexigroup.com'
-              integrity_endpoint: 'https://api.dev.platform.pagopa.it/checkout/npg/sdk/v1/integrity'
+              integrity_endpoint: 'https://api.uat.platform.pagopa.it/checkout/npg/sdk/v1/integrity'
               target_folder: 'npg-uat'
               storage_account: '$(PROD_STORAGE_ACCOUNT_NAME)'
               cdn_rg: '$(PROD_RESOURCE_GROUP_NAME)'
