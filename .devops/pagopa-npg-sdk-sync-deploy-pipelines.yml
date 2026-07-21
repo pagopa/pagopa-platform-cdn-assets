@@ -1,14 +1,11 @@
-# Azure DevOps pipeline to sync the NPG SDK from Nexi to the platform CDN.
-# Runs hourly. NPG has two real environments (staging and production), so the
-# pipeline publishes two folders on the single platform CDN ($web):
-#   - npg-uat  <- NPG staging (stg-ta.nexigroup.com), verified via the UAT integrity API
-#   - npg-prod <- NPG production (xpay.nexigroup.com), verified via the PROD integrity API
-# For each variant it downloads the SDK, computes its SHA-384, verifies it against
-# NPG's source-of-truth hash (payment-methods-handler integrity endpoint via APIM),
-# and only on a match publishes hfsdk.js + hfsdk.integrity.json into the folder.
-# Storage/CDN/subscription values come from the ADO registration (core project):
-#   $(PROD_STORAGE_ACCOUNT_NAME), $(PROD_PROFILE_CDN_NAME), $(PROD_ENDPOINT_NAME),
-#   $(PROD_RESOURCE_GROUP_NAME), $(PROD_AZURE_SUBSCRIPTION), $(PROD_AZURE_STORAGE_KEY).
+# Hourly sync of the NPG SDK from Nexi to the platform CDN ($web). NPG has two real
+# environments, so two folders are published:
+#   - npg-uat  <- NPG staging (stg-ta.nexigroup.com), verified via UAT /integrity
+#   - npg-prod <- NPG production (xpay.nexigroup.com), verified via PROD /integrity
+# Each variant downloads the SDK, computes its SHA-384, verifies it against NPG's
+# source-of-truth hash (payment-methods-handler /integrity via APIM), and only on a
+# match publishes hfsdk.js + hfsdk.integrity.json. Storage/CDN/subscription vars
+# ($(PROD_*)) come from the ADO core registration.
 
 trigger: none
 pr: none
@@ -29,7 +26,7 @@ stages:
     dependsOn: []
     jobs:
       - job: sync_npg_sdk_uat
-        displayName: 'Sync NPG SDK (staging) -> npg-uat'
+        displayName: 'Sync NPG SDK (staging)'
         steps:
           - template: azure-templates/sync-npg-sdk-steps.yml
             parameters:
@@ -47,7 +44,7 @@ stages:
     dependsOn: []
     jobs:
       - job: sync_npg_sdk_prod
-        displayName: 'Sync NPG SDK (production) -> npg-prod'
+        displayName: 'Sync NPG SDK (production)'
         steps:
           - template: azure-templates/sync-npg-sdk-steps.yml
             parameters:

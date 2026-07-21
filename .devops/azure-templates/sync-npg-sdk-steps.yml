@@ -1,10 +1,9 @@
-# Reusable steps to sync one NPG SDK variant to the platform CDN.
-# Downloads the SDK from an NPG origin, computes its SHA-384, verifies it against
-# NPG's source-of-truth hash (fetched from the payment-methods-handler integrity
-# endpoint via APIM), and only on a match publishes hfsdk.js + hfsdk.integrity.json
-# into the given folder of the platform CDN ($web). On a mismatch it fails and the
-# last-known-good stays served. The storage key is read from the AZURE_STORAGE_KEY
-# env var (set by the caller from a secret pipeline variable), never a parameter.
+# Reusable steps to sync one NPG SDK variant to the platform CDN ($web).
+# Downloads the SDK, computes its SHA-384, verifies it against NPG's source-of-truth
+# hash (payment-methods-handler /integrity via APIM), and only on a match publishes
+# hfsdk.js + hfsdk.integrity.json into target_folder. On a mismatch it fails and the
+# last-known-good stays served. The storage key comes from the AZURE_STORAGE_KEY env
+# var (a secret pipeline variable), never a parameter.
 parameters:
   - name: npg_origin
     type: string
@@ -48,8 +47,7 @@ steps:
 
         TARGET_FOLDER="${{ parameters.target_folder }}"
         STORAGE_ACCOUNT="${{ parameters.storage_account }}"
-        # the injected endpoint-name variable can carry stray whitespace; strip it
-        # so the AFD purge targets the real endpoint.
+        # strip stray whitespace from the injected endpoint name so the purge hits it
         CDN_ENDPOINT="$(printf '%s' "${{ parameters.cdn_endpoint }}" | tr -d '[:space:]')"
         EMIT_HEARTBEAT="${{ parameters.emit_heartbeat }}"
 
@@ -69,10 +67,9 @@ steps:
         INTEGRITY="sha384-${HASH}"
         echo "Computed integrity: ${INTEGRITY}"
 
-        # Origin validation: compare the computed hash against NPG's own published hash,
-        # fetched from the payment-methods-handler integrity endpoint (exposed on APIM in
-        # the ecommerce-for-checkout group). The pipeline holds no NPG credential; the
-        # handler owns the npg-api-key and proxies NPG /build/integrity.
+        # Origin validation: compare the computed hash against NPG's own published hash
+        # from the handler /integrity (via APIM). The handler owns the npg-api-key and
+        # proxies NPG /build/integrity; the pipeline holds no NPG credential.
         echo "Fetching source-of-truth integrity from ${{ parameters.integrity_endpoint }}"
         SOT_CODE=$(curl -sSL -w "%{http_code}" -o /tmp/sot.json "${{ parameters.integrity_endpoint }}")
         if [ "${SOT_CODE}" != "200" ]; then
@@ -127,13 +124,11 @@ steps:
           --profile-name "${{ parameters.cdn_profile }}" \
           --content-paths "/${TARGET_FOLDER}/*"
 
-        # Success heartbeat: emit a NpgSdkSyncSuccess customEvent to App Insights, only
-        # for the variant that backs prod consumption (the paging source for the
-        # staleness alert). No heartbeat in the last 3h => the sync has stopped/failing.
+        # Success heartbeat: NpgSdkSyncSuccess customEvent to App Insights, prod variant
+        # only (paging source for the staleness alert; no heartbeat in 3h => stale).
         if [ "${EMIT_HEARTBEAT}" = "true" ]; then
           echo "Emitting sync-success heartbeat to App Insights"
-          # disable xtrace so the App Insights connection string / instrumentation
-          # key are never echoed to the log
+          # disable xtrace so the connection string / iKey are never logged
           set +x
           # bounded with timeout so a hung ARM call can never stall the pipeline
           AI_CONN=$(timeout 30 az monitor app-insights component show \
@@ -144,21 +139,18 @@ steps:
             IKEY=$(printf '%s' "${AI_CONN}" | sed -n 's/.*InstrumentationKey=\([^;]*\).*/\1/p')
             INGEST=$(printf '%s' "${AI_CONN}" | sed -n 's/.*IngestionEndpoint=\([^;]*\).*/\1/p')
             HEARTBEAT_TIME=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
-            # payload + response go to unpredictable temp files (mktemp). Keeping the
-            # iKey in the payload file means it never lands in the process args (argv).
+            # temp files (mktemp) keep the iKey out of the process args (argv)
             HB_PAYLOAD=$(mktemp)
             HB_RESP=$(mktemp)
             printf '{"name":"Microsoft.ApplicationInsights.Event","time":"%s","iKey":"%s","data":{"baseType":"EventData","baseData":{"ver":2,"name":"NpgSdkSyncSuccess","properties":{"integrity":"%s","folder":"%s"}}}}' \
               "${HEARTBEAT_TIME}" "${IKEY}" "${INTEGRITY}" "${TARGET_FOLDER}" > "${HB_PAYLOAD}"
-            # -o sends the body to a file (never stdout); -w prints only the HTTP
-            # status; connect/max timeouts guarantee the call cannot hang the job.
+            # -o body to file, -w prints only HTTP status; timeouts prevent a hang
             HB_CODE=$(curl -sS -o "${HB_RESP}" -w '%{http_code}' \
               --connect-timeout 10 --max-time 30 \
               -X POST "${INGEST}v2/track" -H 'Content-Type: application/json' \
               -d @"${HB_PAYLOAD}" || true)
-            # itemsAccepted is the authoritative "did it land" signal - a 200 alone is
-            # not enough (App Insights can 200 with itemsAccepted:0). The v2/track
-            # response never contains the iKey, so these fields are safe to log.
+            # itemsAccepted is authoritative: App Insights can 200 with itemsAccepted:0.
+            # The v2/track response has no iKey, so these fields are safe to log.
             HB_ACCEPTED=$(sed -n 's/.*"itemsAccepted":\([0-9][0-9]*\).*/\1/p' "${HB_RESP}")
             HB_ERRORS=$(sed -n 's/.*\("errors":\[[^]]*\]\).*/\1/p' "${HB_RESP}")
             rm -f "${HB_PAYLOAD}" "${HB_RESP}"
