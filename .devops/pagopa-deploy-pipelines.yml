@@ -21,13 +21,16 @@ stages:
       - job: 'deploy'
         steps:
           # SYNC STORAGE 
+          # NOTE: "az storage blob sync" deletes any blob not under "assets". npg-uat/ and
+          # npg-prod/ are published out of band by the hourly NPG SDK sync pipeline
+          # (pagopa-npg-sdk-sync-deploy-pipelines.yml), so --exclude-path keeps them alive.
           - task: AzureCLI@1
             displayName: 'Sync Storage'
             inputs:
               azureSubscription: '$(AZURE_SUBSCRIPTION)'
               scriptLocation: inlineScript
               inlineScript: |
-                call az storage blob sync --container "$(BLOB_CONTAINER_NAME)" --account-name $(STORAGE_ACCOUNT_NAME) --account-key $(AZURE_STORAGE_KEY) -s "assets"
+                call az storage blob sync --container "$(BLOB_CONTAINER_NAME)" --account-name $(STORAGE_ACCOUNT_NAME) --account-key $(AZURE_STORAGE_KEY) -s "assets" --exclude-path "npg-uat;npg-prod"
           # PURGE CDN AT EVERY COMMIT, so globally
           - task: AzureCLI@1
             displayName: 'Purge CDN'
