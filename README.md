@@ -73,8 +73,9 @@ pre-commit run -a
 
 ## Externally published paths (do not remove from the sync exclusion)
 
-The NPG SDK is published out of band into the `$web` container by the sync pipeline
-(`.devops/pagopa-npg-sdk-sync-deploy-pipelines.yml`), not committed under `assets/`:
+The NPG SDK is published out of band into the `$web` container by the hourly sync pipeline
+(`.devops/pagopa-npg-sdk-sync-deploy-pipelines.yml`), not committed under `assets/`. It verifies
+the SDK every hour and re-uploads (and purges the CDN) only when the hash changes:
 
 | Path        | Published by                   | Contents                                               |
 |-------------|--------------------------------|--------------------------------------------------------|
