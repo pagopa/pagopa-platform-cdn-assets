@@ -71,11 +71,28 @@ Check your code before commit.
 pre-commit run -a
 ```
 
+## Externally published paths (do not remove from the sync exclusion)
+
+The NPG SDK is published out of band into the `$web` container by the hourly sync pipeline
+(`.devops/pagopa-npg-sdk-sync-deploy-pipelines.yml`), not committed under `assets/`. It verifies
+the SDK every hour and re-uploads (and purges the CDN) only when the hash changes:
+
+| Path        | Published by                   | Contents                                               |
+|-------------|--------------------------------|--------------------------------------------------------|
+| `npg-uat/`  | NPG SDK sync pipeline (hourly) | `hfsdk.js`, `hfsdk.integrity.json` from NPG staging    |
+| `npg-prod/` | NPG SDK sync pipeline (hourly) | `hfsdk.js`, `hfsdk.integrity.json` from NPG production |
+
+The deploy pipeline's `az storage blob sync` has delete-destination on by default, so any blob not
+under `assets/` is removed. `--exclude-path` on the sync step keeps these folders: dropping them wipes
+the SDK on every commit to `main` and breaks SRI loading in the payment frontends (fail-closed: no
+hash, no SDK). Add any future out-of-band asset to the same exclusion.
+
 Here is a reference table about who uses resources and theirs paths from this CDN
 
-| Service              | Database/collection/field      | Paths      | github repo search link                                                                                                                              |
-|----------------------|--------------------------------|------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Transactions-service |                                | apm        | https://github.com/search?q=repo%3Apagopa%2Fpagopa-ecommerce-transactions-service+https%3A%2F%2Fassets.cdn.platform.pagopa.it%2Fapm&type=code        |
-| Transactions-service |                                | creditcard | https://github.com/search?q=repo%3Apagopa%2Fpagopa-ecommerce-transactions-service+https%3A%2F%2Fassets.cdn.platform.pagopa.it%2Fcreditcard&type=code |
-|                      | eCommerce/paymentMethods/asset | apm        | N/A                                                                                                                                                  |
-|                      | eCommerce/paymentMethods/asset | creditcard | N/A                                                                                                                                                  |
+| Service                              | Database/collection/field      | Paths             | github repo search link                                                                                                                              |
+|--------------------------------------|--------------------------------|-------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Transactions-service                 |                                | apm               | https://github.com/search?q=repo%3Apagopa%2Fpagopa-ecommerce-transactions-service+https%3A%2F%2Fassets.cdn.platform.pagopa.it%2Fapm&type=code        |
+| Transactions-service                 |                                | creditcard        | https://github.com/search?q=repo%3Apagopa%2Fpagopa-ecommerce-transactions-service+https%3A%2F%2Fassets.cdn.platform.pagopa.it%2Fcreditcard&type=code |
+|                                      | eCommerce/paymentMethods/asset | apm               | N/A                                                                                                                                                  |
+|                                      | eCommerce/paymentMethods/asset | creditcard        | N/A                                                                                                                                                  |
+| checkout-fe, wallet-fe, ecommerce-fe |                                | npg-uat, npg-prod | NPG SDK loaded with SRI, published by the sync pipeline (see above), not committed here                                                              |

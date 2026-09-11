@@ -1,0 +1,61 @@
+# Hourly sync of the NPG SDK from Nexi to the platform CDN ($web). NPG has two real
+# environments, so two folders are published:
+#   - npg-uat  <- NPG staging (stg-ta.nexigroup.com), verified via UAT /integrity
+#   - npg-prod <- NPG production (xpay.nexigroup.com), verified via PROD /integrity
+# Each variant downloads the SDK, computes its SHA-384, verifies it against NPG's
+# source-of-truth hash (payment-methods-handler /integrity via APIM), and only on a
+# match publishes hfsdk.js + hfsdk.integrity.json. Storage/CDN/subscription vars
+# ($(PROD_*)) come from the ADO core registration.
+
+trigger: none
+pr: none
+
+schedules:
+  - cron: "0 * * * *"
+    displayName: "Sync NPG SDK hourly"
+    branches:
+      include:
+        - main
+    always: true
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - stage: Sync_npg_uat
+    dependsOn: []
+    jobs:
+      - job: sync_npg_sdk_uat
+        displayName: 'Sync NPG SDK (staging)'
+        steps:
+          - template: azure-templates/sync-npg-sdk-steps.yml
+            parameters:
+              npg_origin: 'https://stg-ta.nexigroup.com'
+              integrity_endpoint: 'https://api.uat.platform.pagopa.it/checkout/npg/sdk/v1/integrity'
+              target_folder: 'npg-uat'
+              storage_account: '$(PROD_STORAGE_ACCOUNT_NAME)'
+              cdn_rg: '$(PROD_RESOURCE_GROUP_NAME)'
+              cdn_profile: '$(PROD_PROFILE_CDN_NAME)'
+              cdn_endpoint: '$(PROD_ENDPOINT_NAME)'
+              service_connection: '$(PROD_AZURE_SUBSCRIPTION)'
+              emit_heartbeat: 'false'
+
+  - stage: Sync_npg_prod
+    dependsOn: []
+    jobs:
+      - job: sync_npg_sdk_prod
+        displayName: 'Sync NPG SDK (production)'
+        steps:
+          - template: azure-templates/sync-npg-sdk-steps.yml
+            parameters:
+              npg_origin: 'https://xpay.nexigroup.com'
+              integrity_endpoint: 'https://api.platform.pagopa.it/checkout/npg/sdk/v1/integrity'
+              target_folder: 'npg-prod'
+              storage_account: '$(PROD_STORAGE_ACCOUNT_NAME)'
+              cdn_rg: '$(PROD_RESOURCE_GROUP_NAME)'
+              cdn_profile: '$(PROD_PROFILE_CDN_NAME)'
+              cdn_endpoint: '$(PROD_ENDPOINT_NAME)'
+              service_connection: '$(PROD_AZURE_SUBSCRIPTION)'
+              emit_heartbeat: 'true'
+              app_insights_name: 'pagopa-p-appinsights'
+              app_insights_rg: 'pagopa-p-monitor-rg'
