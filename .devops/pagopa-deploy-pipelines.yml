@@ -22,7 +22,7 @@ stages:
         steps:
           # SYNC STORAGE 
           # NOTE: "az storage blob sync" deletes any blob not under "assets". npg-uat/ and
-          # npg-prod/ are published out of band by the hourly NPG SDK sync pipeline
+          # npg-prod/ are published out of band by the NPG SDK sync pipeline (every 3 hours)
           # (pagopa-npg-sdk-sync-deploy-pipelines.yml), so --exclude-path keeps them alive.
           - task: AzureCLI@1
             displayName: 'Sync Storage'
