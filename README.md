@@ -73,14 +73,14 @@ pre-commit run -a
 
 ## Externally published paths (do not remove from the sync exclusion)
 
-The NPG SDK is published out of band into the `$web` container by the hourly sync pipeline
-(`.devops/pagopa-npg-sdk-sync-deploy-pipelines.yml`), not committed under `assets/`. It verifies
-the SDK every hour and re-uploads (and purges the CDN) only when the hash changes:
+The NPG SDK is published out of band into the `$web` container by the sync pipeline
+(`.devops/pagopa-npg-sdk-sync-deploy-pipelines.yml`), which runs every 3 hours, not committed under
+`assets/`. It verifies the SDK on each run and re-uploads (and purges the CDN) only when the hash changes:
 
-| Path        | Published by                   | Contents                                               |
-|-------------|--------------------------------|--------------------------------------------------------|
-| `npg-uat/`  | NPG SDK sync pipeline (hourly) | `hfsdk.js`, `hfsdk.integrity.json` from NPG staging    |
-| `npg-prod/` | NPG SDK sync pipeline (hourly) | `hfsdk.js`, `hfsdk.integrity.json` from NPG production |
+| Path        | Published by                    | Contents                                               |
+|-------------|---------------------------------|--------------------------------------------------------|
+| `npg-uat/`  | NPG SDK sync pipeline (every 3h) | `hfsdk.js`, `hfsdk.integrity.json` from NPG staging    |
+| `npg-prod/` | NPG SDK sync pipeline (every 3h) | `hfsdk.js`, `hfsdk.integrity.json` from NPG production |
 
 The deploy pipeline's `az storage blob sync` has delete-destination on by default, so any blob not
 under `assets/` is removed. `--exclude-path` on the sync step keeps these folders: dropping them wipes

@@ -1,4 +1,4 @@
-# Hourly sync of the NPG SDK from Nexi to the platform CDN ($web). NPG has two real
+# Scheduled sync (every 3 hours) of the NPG SDK from Nexi to the platform CDN ($web). NPG has two real
 # environments, so two folders are published:
 #   - npg-uat  <- NPG staging (stg-ta.nexigroup.com), verified via UAT /integrity
 #   - npg-prod <- NPG production (xpay.nexigroup.com), verified via PROD /integrity
@@ -11,8 +11,8 @@ trigger: none
 pr: none
 
 schedules:
-  - cron: "0 * * * *"
-    displayName: "Sync NPG SDK hourly"
+  - cron: "0 */3 * * *"
+    displayName: "Sync NPG SDK every 3 hours"
     branches:
       include:
         - main

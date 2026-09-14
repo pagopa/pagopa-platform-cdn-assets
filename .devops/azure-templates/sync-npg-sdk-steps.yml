@@ -152,7 +152,7 @@ steps:
         fi
 
         # Success heartbeat: NpgSdkSyncSuccess customEvent to App Insights, prod variant
-        # only (paging source for the staleness alert; no heartbeat in 3h => stale).
+        # only (paging source for the staleness alert; no heartbeat in 7h => stale).
         if [ "${EMIT_HEARTBEAT}" = "true" ]; then
           echo "Emitting sync-success heartbeat to App Insights"
           # disable xtrace so the connection string / iKey are never logged
